@@ -1,0 +1,9 @@
+{
+  "name": "PureAir Pro: Smart Environmental OS",
+  "description": "AI-powered air quality monitoring application with real-time geolocation, personal exposure scoring, route analysis, and AURA AI assistant powered by Google Gemini.",
+  "version": "1.0.0",
+  "requestFramePermissions": [
+    "geolocation",
+    "microphone"
+  ]
+}
