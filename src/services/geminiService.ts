@@ -2,7 +2,19 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { AQIResponse, UserProfile, HistoricalEntry, DailyPlan } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Lazy initialization to prevent crash if API key is not set
+let ai: GoogleGenAI | null = null;
+
+const getAI = (): GoogleGenAI => {
+  if (!ai) {
+    const apiKey = process.env.API_KEY || process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("Gemini API key not configured. Please set GEMINI_API_KEY environment variable.");
+    }
+    ai = new GoogleGenAI({ apiKey });
+  }
+  return ai;
+};
 
 export const getAIInsights = async (aqiData: AQIResponse, profile?: UserProfile | null, activePlan?: DailyPlan | null) => {
   const currentActivity = activePlan?.activity || profile?.mainActivity;
@@ -20,7 +32,7 @@ export const getAIInsights = async (aqiData: AQIResponse, profile?: UserProfile 
   3. Calculate the risk of doing "${currentActivity}" at ${aqiData.aqi} AQI for ${duration}m.
   4. Be punchy, professional, and data-driven.`;
 
-  const response = await ai.models.generateContent({
+  const response = await getAI().models.generateContent({
     model: "gemini-3-flash-preview",
     contents: prompt,
     config: {
@@ -61,7 +73,7 @@ export const analyzeRoutePollutants = async (origin: string, destination: string
   User sensitivity: ${profile.sensitivity}.
   Provide a 1-sentence technical risk assessment and one specific mask/filter recommendation.`;
 
-  const response = await ai.models.generateContent({
+  const response = await getAI().models.generateContent({
     model: "gemini-3-flash-preview",
     contents: prompt,
     config: {
@@ -84,7 +96,7 @@ export const predictFutureAQI = async (location: string, currentAqi: number) => 
   Current AQI: ${currentAqi}.
   Provide a brief scientific reasoning for the trend (e.g., wind patterns, industrial cycles).`;
 
-  const response = await ai.models.generateContent({
+  const response = await getAI().models.generateContent({
     model: 'gemini-3-flash-preview',
     contents: prompt,
     config: {
@@ -118,7 +130,7 @@ export const getTrendInsights = async (history: HistoricalEntry[], profile: User
   const historyStr = recentHistory.map(h => `${h.date}: AQI ${h.aqi} in ${h.city}`).join('\n');
   const prompt = `Act as an environmental epidemiologist. Analyze this historical AQI sequence for ${profile.name} (${profile.age} years old), who frequently does ${profile.mainActivity}:\n\n${historyStr}\n\nTasks:\n1. Address ${profile.name} directly in your summary.\n2. Summarize the cumulative health impact in 2 punchy sentences.\n3. Provide one specific optimization tip for their "${profile.mainActivity}" routine next week.\n4. Determine cumulative risk: Low, Moderate, or Significant.`;
 
-  const response = await ai.models.generateContent({
+  const response = await getAI().models.generateContent({
     model: "gemini-3-flash-preview",
     contents: prompt,
     config: {
@@ -144,7 +156,7 @@ export const getDailyDebrief = async (aqi: number, pes: number, profile: UserPro
   Generate a punchy, 1-sentence "Daily Takeaway" for an environmental OS dashboard. 
   Focus on biological impact and tomorrow's strategy.`;
 
-  const response = await ai.models.generateContent({
+  const response = await getAI().models.generateContent({
     model: "gemini-3-flash-preview",
     contents: prompt,
   });
