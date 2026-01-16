@@ -150,28 +150,33 @@ npm run preview
 
 ```
 PureAir/
-├── App.tsx                 # Main application component
-├── index.html              # Entry HTML with custom styling
-├── index.tsx               # React entry point
-├── types.ts                # TypeScript interfaces
-├── constants.ts            # AQI thresholds & configurations
-├── components/
-│   ├── AICharacter.tsx     # AURA animated avatar
-│   ├── AQIHero.tsx         # Main AQI display card
-│   ├── DailyPlanner.tsx    # Activity scheduling
-│   ├── DailySummary.tsx    # Daily takeaway insights
-│   ├── ExposureAssessment.tsx  # PES calculations
-│   ├── ForecastStrip.tsx   # 12-hour AQI predictions
-│   ├── GeminiAssistant.tsx # Voice-enabled AI chat
-│   ├── Header.tsx          # Navigation & search
-│   ├── Onboarding.tsx      # User profile setup
-│   ├── PollutantGrid.tsx   # Pollutant breakdown cards
-│   ├── Sidebar.tsx         # Settings panel
-│   ├── TravelRoutes.tsx    # Interactive map & routes
-│   └── TrendAnalysis.tsx   # Historical AQI trends
-├── services/
-│   ├── aqiService.ts       # AQI data fetching logic
-│   └── geminiService.ts    # Gemini AI integrations
+├── public/                 # Static assets
+├── src/
+│   ├── App.tsx             # Main application component
+│   ├── index.tsx           # React entry point
+│   ├── types.ts            # TypeScript interfaces
+│   ├── constants.ts        # AQI thresholds & configurations
+│   ├── components/
+│   │   ├── AICharacter.tsx     # AURA animated avatar
+│   │   ├── AQIHero.tsx         # Main AQI display card
+│   │   ├── DailyPlanner.tsx    # Activity scheduling
+│   │   ├── DailySummary.tsx    # Daily takeaway insights
+│   │   ├── ExposureAssessment.tsx  # PES calculations
+│   │   ├── ForecastStrip.tsx   # 12-hour AQI predictions
+│   │   ├── GeminiAssistant.tsx # Voice-enabled AI chat
+│   │   ├── Header.tsx          # Navigation & search
+│   │   ├── Onboarding.tsx      # User profile setup
+│   │   ├── PollutantGrid.tsx   # Pollutant breakdown cards
+│   │   ├── Sidebar.tsx         # Settings panel
+│   │   ├── TravelRoutes.tsx    # Interactive map & routes
+│   │   └── TrendAnalysis.tsx   # Historical AQI trends
+│   └── services/
+│       ├── aqiService.ts       # AQI data fetching logic
+│       └── geminiService.ts    # Gemini AI integrations
+├── index.html              # Entry HTML
+├── vite.config.ts          # Vite configuration
+├── vercel.json             # Vercel deployment config
+├── package.json
 └── .env.local              # API keys (gitignored)
 ```
 
