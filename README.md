@@ -125,6 +125,27 @@ npm run preview
 
 ---
 
+## ☁️ Deploy to Vercel
+
+### One-Click Deploy
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/vabhinavrao/PureAir&env=GEMINI_API_KEY&envDescription=Google%20Gemini%20API%20Key%20for%20AI%20features&envLink=https://aistudio.google.com/apikey&project-name=pureair-pro&repository-name=pureair-pro)
+
+### Manual Deployment
+
+1. **Import your repository** at [vercel.com/new](https://vercel.com/new)
+2. **Configure environment variable**:
+   - `GEMINI_API_KEY` = your Google Gemini API key
+3. **Deploy** — Vercel auto-detects Vite and configures the build
+
+### Environment Variables on Vercel
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `GEMINI_API_KEY` | ✅ | Your Google Gemini API key |
+
+---
+
 ## 📁 Project Structure
 
 ```
