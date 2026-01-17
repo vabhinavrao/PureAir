@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { GoogleGenAI, Modality } from '@google/genai';
+import { GoogleGenAI } from '@google/genai';
 import { AQIResponse, UserProfile, HistoricalEntry, DailyPlan } from '../types';
 import FeedbackControl from './FeedbackControl';
 
@@ -18,34 +18,6 @@ interface Props {
   onSpeakingChange?: (isSpeaking: boolean) => void;
 }
 
-function decodeBase64(base64: string): Uint8Array {
-  const binaryString = atob(base64);
-  const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes;
-}
-
-async function decodeAudioData(
-  data: Uint8Array,
-  ctx: AudioContext,
-  sampleRate: number,
-  numChannels: number,
-): Promise<AudioBuffer> {
-  const dataInt16 = new Int16Array(data.buffer, data.byteOffset, data.byteLength / 2);
-  const frameCount = dataInt16.length / numChannels;
-  const buffer = ctx.createBuffer(numChannels, frameCount, sampleRate);
-
-  for (let channel = 0; channel < numChannels; channel++) {
-    const channelData = buffer.getChannelData(channel);
-    for (let i = 0; i < frameCount; i++) {
-      channelData[i] = dataInt16[i * numChannels + channel] / 32768.0;
-    }
-  }
-  return buffer;
-}
-
 const GeminiAssistant: React.FC<Props> = ({ aqiData, profile, history, plan, onClose, onSpeakingChange }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
@@ -53,32 +25,14 @@ const GeminiAssistant: React.FC<Props> = ({ aqiData, profile, history, plan, onC
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isCalibrating, setIsCalibrating] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(true);
 
   const scrollRef = useRef<HTMLDivElement>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const recognitionRef = useRef<any>(null);
+  const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-  if (!apiKey) {
-    console.error("AURA Error: Gemini API key not configured. Set VITE_GEMINI_API_KEY in .env.local");
-  }
-  const ai = new GoogleGenAI({ apiKey: apiKey || '' });
-
-  const getAudioContext = () => {
-    if (!audioContextRef.current) {
-      const GlobalCtx = (window as any).AURA_AUDIO_CONTEXT;
-      if (GlobalCtx && GlobalCtx.sampleRate === 24000) {
-        audioContextRef.current = GlobalCtx;
-      } else {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({
-          sampleRate: 24000
-        });
-        (window as any).AURA_AUDIO_CONTEXT = audioContextRef.current;
-      }
-    }
-    return audioContextRef.current!;
-  };
+  const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
 
   const updateSpeakingState = (speaking: boolean) => {
     setIsSpeaking(speaking);
@@ -86,63 +40,49 @@ const GeminiAssistant: React.FC<Props> = ({ aqiData, profile, history, plan, onC
   };
 
   const stopCurrentSpeech = () => {
-    if (currentSourceRef.current) {
-      try {
-        currentSourceRef.current.stop();
-        currentSourceRef.current.disconnect();
-      } catch (e) { }
-      currentSourceRef.current = null;
-    }
+    window.speechSynthesis.cancel();
     updateSpeakingState(false);
   };
 
-  const speakText = async (text: string) => {
-    try {
-      stopCurrentSpeech();
-      updateSpeakingState(true);
+  // Browser-based TTS - reliable and always works
+  const speakText = (text: string) => {
+    if (!voiceEnabled || !window.speechSynthesis) return;
 
-      const response = await ai.models.generateContent({
-        model: "gemini-2.5-flash-preview-tts",
-        contents: [{ parts: [{ text: `System Instruction: You are AURA. Output the following response: ${text}` }] }],
-        config: {
-          responseModalities: [Modality.AUDIO],
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: { voiceName: 'Kore' },
-            },
-          },
-        },
-      });
+    stopCurrentSpeech();
+    updateSpeakingState(true);
 
-      const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 1.0;
+    utterance.pitch = 0.9;
+    utterance.volume = 1.0;
 
-      if (base64Audio) {
-        const ctx = getAudioContext();
-        if (ctx.state === 'suspended') await ctx.resume();
-
-        const audioBuffer = await decodeAudioData(decodeBase64(base64Audio), ctx, 24000, 1);
-        const source = ctx.createBufferSource();
-        source.buffer = audioBuffer;
-        source.connect(ctx.destination);
-
-        source.onended = () => {
-          if (currentSourceRef.current === source) {
-            updateSpeakingState(false);
-            currentSourceRef.current = null;
-          }
-        };
-
-        currentSourceRef.current = source;
-        source.start(0);
-      } else {
-        updateSpeakingState(false);
-      }
-    } catch (err) {
-      console.error("AURA Voice Error:", err);
-      updateSpeakingState(false);
+    // Try to get a nice voice
+    const voices = window.speechSynthesis.getVoices();
+    const preferredVoice = voices.find(v =>
+      v.name.includes('Samantha') ||
+      v.name.includes('Google') ||
+      v.name.includes('Premium') ||
+      v.lang.startsWith('en')
+    );
+    if (preferredVoice) {
+      utterance.voice = preferredVoice;
     }
+
+    utterance.onend = () => updateSpeakingState(false);
+    utterance.onerror = () => updateSpeakingState(false);
+
+    utteranceRef.current = utterance;
+    window.speechSynthesis.speak(utterance);
   };
 
+  // Load voices when available
+  useEffect(() => {
+    const loadVoices = () => window.speechSynthesis.getVoices();
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+  }, []);
+
+  // Setup speech recognition
   useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
@@ -175,19 +115,32 @@ const GeminiAssistant: React.FC<Props> = ({ aqiData, profile, history, plan, onC
     }
   };
 
+  // Initialize AURA with greeting
   useEffect(() => {
     const initAura = async () => {
       setLoading(true);
+
+      if (!ai) {
+        const fallbackText = `AURA online, ${profile.name}. Environmental monitoring active for ${aqiData.location.city}. Current AQI: ${aqiData.aqi}.`;
+        setMessages([{ role: 'ai', text: fallbackText }]);
+        speakText(fallbackText);
+        setLoading(false);
+        return;
+      }
+
       try {
         const res = await ai.models.generateContent({
-          model: 'gemini-3-flash-preview',
-          contents: `System: You are AURA, a high-tech environmental OS. Provide a brief, professional, and personalized 1-sentence greeting for ${profile.name} in ${aqiData.location.city}. Mention the current AQI is ${aqiData.aqi}.`,
+          model: 'gemini-2.0-flash',
+          contents: `You are AURA, a sophisticated AI environmental assistant. Generate a brief, warm, professional greeting (1-2 sentences) for ${profile.name} who is in ${aqiData.location.city}. The current AQI is ${aqiData.aqi} (${aqiData.category}). Sound like a futuristic AI assistant. Keep it concise.`,
         });
-        const text = res.text || `AURA online, ${profile.name}. Monitoring ${aqiData.aqi} AQI in ${aqiData.location.city}.`;
+        const text = res.text || `AURA online, ${profile.name}. Monitoring air quality in ${aqiData.location.city}. Current AQI: ${aqiData.aqi}.`;
         setMessages([{ role: 'ai', text }]);
         speakText(text);
       } catch (e) {
-        setMessages([{ role: 'ai', text: "AURA online. Text-only protocols active." }]);
+        console.error("AURA init error:", e);
+        const fallbackText = `AURA online, ${profile.name}. Environmental systems active. Current AQI in ${aqiData.location.city}: ${aqiData.aqi}.`;
+        setMessages([{ role: 'ai', text: fallbackText }]);
+        speakText(fallbackText);
       } finally {
         setLoading(false);
       }
@@ -210,16 +163,34 @@ const GeminiAssistant: React.FC<Props> = ({ aqiData, profile, history, plan, onC
 
     const historyPrompt = messages.slice(-3).map(m => `${m.role === 'ai' ? 'AURA' : 'User'}: ${m.text}`).join('\n');
 
+    if (!ai) {
+      const fallbackResponse = `I understand you're asking about "${textToSend}". With an AQI of ${aqiData.aqi} in ${aqiData.location.city}, I recommend staying informed about air quality conditions.`;
+      setMessages(prev => [...prev, { role: 'ai', text: fallbackResponse }]);
+      speakText(fallbackResponse);
+      setLoading(false);
+      return;
+    }
+
     try {
       const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: `System: You are AURA. ${aqiData.aqi} AQI in ${aqiData.location.city}. Context: ${historyPrompt}. User: ${textToSend}. Response: Data-driven health focus.`,
+        model: 'gemini-2.0-flash',
+        contents: `You are AURA, an AI environmental health assistant. Current conditions: AQI ${aqiData.aqi} (${aqiData.category}) in ${aqiData.location.city}. PM2.5: ${aqiData.pollutants.pm25}µg/m³.
+        
+Conversation history:
+${historyPrompt}
+
+User question: ${textToSend}
+
+Provide a helpful, data-driven response about air quality, health advice, or environmental conditions. Be concise (2-3 sentences max), professional, and sound like a futuristic AI assistant. Focus on actionable health advice.`,
       });
-      const aiText = response.text || "Analysis incomplete.";
+      const aiText = response.text || "I apologize, I couldn't process that request. Please try again.";
       setMessages(prev => [...prev, { role: 'ai', text: aiText }]);
       speakText(aiText);
     } catch (error) {
-      setMessages(prev => [...prev, { role: 'ai', text: "Transmission error." }]);
+      console.error("AURA response error:", error);
+      const errorResponse = `Based on current conditions with AQI at ${aqiData.aqi}, I recommend ${aqiData.aqi > 100 ? 'limiting outdoor exposure' : 'conditions are generally safe for outdoor activities'}.`;
+      setMessages(prev => [...prev, { role: 'ai', text: errorResponse }]);
+      speakText(errorResponse);
     } finally {
       setLoading(false);
     }
@@ -247,14 +218,29 @@ const GeminiAssistant: React.FC<Props> = ({ aqiData, profile, history, plan, onC
               <div className="flex items-center gap-2 mt-1">
                 <span className={`w-2 h-2 rounded-full ${isCalibrating ? 'bg-blue-400' : (isSpeaking ? 'bg-green-400 animate-pulse shadow-[0_0_10px_#4ade80]' : 'bg-blue-400 opacity-40')}`} />
                 <span className="text-[10px] text-slate-400 font-black uppercase tracking-[0.2em]">
-                  {isCalibrating ? 'Calibrating Intelligence' : (isSpeaking ? 'AURA Transmitting' : 'AURA Standby')}
+                  {isCalibrating ? 'Calibrating Intelligence' : (isSpeaking ? 'AURA Speaking' : 'AURA Ready')}
                 </span>
               </div>
             </div>
           </div>
-          <button onClick={onClose} className="p-3 hover:bg-slate-800 rounded-2xl transition-all hover:rotate-90 text-slate-400 hover:text-white">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" /></svg>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setVoiceEnabled(!voiceEnabled)}
+              className={`p-3 rounded-2xl transition-all ${voiceEnabled ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400'}`}
+              title={voiceEnabled ? 'Voice On' : 'Voice Off'}
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {voiceEnabled ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15zM17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
+                )}
+              </svg>
+            </button>
+            <button onClick={onClose} className="p-3 hover:bg-slate-800 rounded-2xl transition-all hover:rotate-90 text-slate-400 hover:text-white">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+          </div>
         </div>
 
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-8 space-y-8 bg-white/70 scrollbar-hide">
@@ -278,7 +264,7 @@ const GeminiAssistant: React.FC<Props> = ({ aqiData, profile, history, plan, onC
               </span>
             </div>
           ))}
-          {loading && <div className="flex items-center gap-3 bg-blue-50/50 w-fit px-6 py-4 rounded-3xl border border-blue-100"><div className="flex gap-1"><div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" /><div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce [animation-delay:0.2s]" /><div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce [animation-delay:0.4s]" /></div><span className="text-[10px] font-black text-blue-500 uppercase tracking-widest">Processing Telemetry...</span></div>}
+          {loading && <div className="flex items-center gap-3 bg-blue-50/50 w-fit px-6 py-4 rounded-3xl border border-blue-100"><div className="flex gap-1"><div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" /><div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce [animation-delay:0.2s]" /><div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce [animation-delay:0.4s]" /></div><span className="text-[10px] font-black text-blue-500 uppercase tracking-widest">AURA Processing...</span></div>}
         </div>
 
         <div className="p-8 border-t border-slate-100 bg-white/95 backdrop-blur-xl">
@@ -295,7 +281,7 @@ const GeminiAssistant: React.FC<Props> = ({ aqiData, profile, history, plan, onC
             </button>
             <input
               type="text"
-              placeholder={isListening ? "Listening..." : "Command AURA via text or voice..."}
+              placeholder={isListening ? "Listening..." : "Ask AURA about air quality..."}
               value={inputValue}
               onChange={(e) => setInputValue(e.target.value)}
               disabled={loading}
@@ -311,7 +297,7 @@ const GeminiAssistant: React.FC<Props> = ({ aqiData, profile, history, plan, onC
           </form>
 
           <div className="flex flex-wrap gap-2 mt-6">
-            {["Is it safe for a run?", "Explain PM2.5", "Routine update"].map(cmd => (
+            {["Is it safe for a run?", "Explain PM2.5", "Health tips"].map(cmd => (
               <button key={cmd} onClick={() => setInputValue(cmd)} className="px-4 py-2 bg-slate-50 hover:bg-blue-50 border border-slate-100 hover:border-blue-200 rounded-xl text-[9px] font-black text-slate-500 hover:text-blue-600 uppercase tracking-widest transition-all">{cmd}</button>
             ))}
           </div>
