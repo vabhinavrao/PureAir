@@ -293,9 +293,33 @@ function App() {
     }
   };
 
-  // Show login screen while checking auth or if not authenticated
-  // This eliminates the loading spinner delay - Firebase will auto-transition if already logged in
-  if (authLoading || !user) {
+  // Show loading screen while Firebase initializes
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-gradient-to-br from-slate-50 to-blue-50">
+        <div className="glass-card p-16 rounded-[50px] text-center space-y-8 max-w-md w-full border-l-[12px] border-blue-600">
+          <div className="w-20 h-20 mx-auto bg-gradient-to-br from-blue-500 to-cyan-400 rounded-3xl flex items-center justify-center shadow-2xl animate-pulse">
+            <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z" />
+            </svg>
+          </div>
+          <div className="space-y-3">
+            <h1 className="text-3xl font-black text-slate-900 tracking-tight">PureAir Pro</h1>
+            <p className="text-slate-500 font-medium text-sm">Initializing Environmental OS...</p>
+          </div>
+          <div className="flex items-center justify-center gap-2">
+            <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+            <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+            <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+          </div>
+          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Connecting to AURA Core</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show login screen if not authenticated
+  if (!user) {
     return <LoginScreen onLoginSuccess={() => { }} />;
   }
 
