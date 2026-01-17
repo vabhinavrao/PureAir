@@ -4,20 +4,30 @@ import { UserProfile } from '../types';
 
 interface Props {
   onComplete: (profile: UserProfile) => void;
+  userName?: string; // Pre-filled from Gmail auth
 }
 
-const Onboarding: React.FC<Props> = ({ onComplete }) => {
+const Onboarding: React.FC<Props> = ({ onComplete, userName }) => {
   const [step, setStep] = useState(1);
   const [profile, setProfile] = useState<Partial<UserProfile>>({
-    name: '',
+    name: userName || 'User',
     age: 25,
     activityLevel: 'commuter',
     sensitivity: 'none',
-    mainActivity: ''
+    mainActivity: 'Daily Commute' // Default activity
   });
 
   const next = () => setStep(s => s + 1);
   const finish = () => onComplete(profile as UserProfile);
+
+  // Skip entire onboarding with defaults
+  const skipAll = () => onComplete({
+    name: userName || 'User',
+    age: 25,
+    activityLevel: 'commuter',
+    sensitivity: 'none',
+    mainActivity: 'Daily Commute'
+  });
 
   return (
     <div className="fixed inset-0 flex items-center justify-center p-4 bg-slate-900 z-[100] overflow-hidden">
@@ -28,37 +38,56 @@ const Onboarding: React.FC<Props> = ({ onComplete }) => {
       </div>
 
       <div className="max-w-xl w-full glass-card rounded-[40px] p-12 space-y-10 relative z-10 border-white/10 shadow-[0_30px_100px_rgba(0,0,0,0.5)] animate-in zoom-in-95 duration-700">
-        
-        {/* Progress Dots */}
+
+        {/* Progress Dots - Now 2 steps */}
         <div className="flex justify-center gap-3">
-          {[1, 2, 3, 4].map(i => (
+          {[1, 2].map(i => (
             <div key={i} className={`h-1.5 rounded-full transition-all duration-500 ${step >= i ? 'w-8 bg-blue-500' : 'w-2 bg-slate-700'}`} />
           ))}
         </div>
 
+        {/* Welcome Header */}
+        <div className="text-center pb-2">
+          <p className="text-blue-400 font-black text-sm uppercase tracking-widest mb-2">Welcome, {userName || 'User'}</p>
+          <p className="text-slate-500 text-xs">Quick calibration • Reconfigure anytime in Settings</p>
+        </div>
+
         {step === 1 && (
-          <div className="space-y-8 animate-in slide-in-from-bottom-4">
+          <div className="space-y-8 animate-in slide-in-from-right-4">
             <div className="text-center">
-              <h2 className="text-4xl font-black text-white tracking-tight mb-2">Initialize User Node</h2>
-              <p className="text-slate-400 font-bold">What should the system call you?</p>
+              <h2 className="text-4xl font-black text-white tracking-tight mb-2">Health Profile</h2>
+              <p className="text-slate-400 font-bold">Optimize air quality alerts for your needs.</p>
             </div>
-            <div className="space-y-4">
-              <input 
-                autoFocus
-                type="text"
-                placeholder="Enter authorized name..."
-                className="w-full bg-slate-800/50 border-2 border-slate-700 rounded-2xl px-8 py-5 text-xl font-black text-white focus:border-blue-500 outline-none transition-all placeholder:text-slate-600"
-                value={profile.name}
-                onChange={e => setProfile({...profile, name: e.target.value})}
-                onKeyDown={e => e.key === 'Enter' && profile.name && next()}
-              />
-              <button 
-                disabled={!profile.name}
-                onClick={next}
-                className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white py-5 rounded-2xl font-black uppercase tracking-[0.2em] shadow-xl shadow-blue-600/20 transition-all active:scale-95"
-              >
-                Sync Identity
-              </button>
+            <div className="space-y-6">
+              <div>
+                <label className="text-sm font-black text-slate-500 uppercase tracking-widest block mb-4">Current Age: <span className="text-blue-400 text-lg">{profile.age}</span></label>
+                <input
+                  type="range" min="1" max="100"
+                  className="w-full accent-blue-500 bg-slate-800 h-2 rounded-lg appearance-none cursor-pointer"
+                  value={profile.age}
+                  onChange={e => setProfile({ ...profile, age: parseInt(e.target.value) })}
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-3">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Respiratory Sensitivity</label>
+                {['none', 'asthma', 'allergy'].map(s => (
+                  <button
+                    key={s}
+                    onClick={() => setProfile({ ...profile, sensitivity: s as any })}
+                    className={`py-4 rounded-xl border-2 transition-all font-bold capitalize ${profile.sensitivity === s ? 'border-blue-500 bg-blue-500/10 text-white' : 'border-slate-800 text-slate-500 hover:border-slate-600'}`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+              <div className="flex gap-3">
+                <button onClick={skipAll} className="flex-1 bg-slate-800/50 text-slate-400 py-5 rounded-2xl font-black uppercase tracking-widest hover:bg-slate-700 transition-all text-sm">
+                  Skip All
+                </button>
+                <button onClick={next} className="flex-[2] bg-blue-600 text-white py-5 rounded-2xl font-black uppercase tracking-widest hover:bg-blue-500 transition-all">
+                  Continue
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -66,49 +95,14 @@ const Onboarding: React.FC<Props> = ({ onComplete }) => {
         {step === 2 && (
           <div className="space-y-8 animate-in slide-in-from-right-4">
             <div className="text-center">
-              <h2 className="text-4xl font-black text-white tracking-tight mb-2">Biological Specs</h2>
-              <p className="text-slate-400 font-bold">Calibrating health thresholds for {profile.name}.</p>
-            </div>
-            <div className="space-y-6">
-              <div>
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-4">Current Age: <span className="text-blue-400">{profile.age}</span></label>
-                <input 
-                  type="range" min="1" max="100" 
-                  className="w-full accent-blue-500 bg-slate-800 h-2 rounded-lg appearance-none cursor-pointer"
-                  value={profile.age}
-                  onChange={e => setProfile({...profile, age: parseInt(e.target.value)})}
-                />
-              </div>
-              <div className="grid grid-cols-1 gap-3">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Respiratory Sensitivity</label>
-                {['none', 'asthma', 'allergy'].map(s => (
-                  <button 
-                    key={s} 
-                    onClick={() => setProfile({...profile, sensitivity: s as any})}
-                    className={`py-4 rounded-xl border-2 transition-all font-bold capitalize ${profile.sensitivity === s ? 'border-blue-500 bg-blue-500/10 text-white' : 'border-slate-800 text-slate-500 hover:border-slate-600'}`}
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-              <button onClick={next} className="w-full bg-slate-800 text-white py-5 rounded-2xl font-black uppercase tracking-widest hover:bg-slate-700 transition-all">
-                Continue Calibration
-              </button>
-            </div>
-          </div>
-        )}
-
-        {step === 3 && (
-          <div className="space-y-8 animate-in slide-in-from-right-4">
-            <div className="text-center">
-              <h2 className="text-4xl font-black text-white tracking-tight mb-2">Routine Analysis</h2>
-              <p className="text-slate-400 font-bold">Which category best describes your movement?</p>
+              <h2 className="text-4xl font-black text-white tracking-tight mb-2">Activity Profile</h2>
+              <p className="text-slate-400 font-bold">Which best describes your lifestyle?</p>
             </div>
             <div className="grid grid-cols-1 gap-3">
               {['indoor', 'commuter', 'athlete'].map(l => (
-                <button 
-                  key={l} 
-                  onClick={() => setProfile({...profile, activityLevel: l as any})}
+                <button
+                  key={l}
+                  onClick={() => setProfile({ ...profile, activityLevel: l as any })}
                   className={`py-5 px-8 rounded-2xl border-2 text-left transition-all ${profile.activityLevel === l ? 'border-blue-500 bg-blue-500/10' : 'border-slate-800'}`}
                 >
                   <div className="font-black text-white capitalize">{l}</div>
@@ -119,37 +113,13 @@ const Onboarding: React.FC<Props> = ({ onComplete }) => {
                   </div>
                 </button>
               ))}
-              <button onClick={next} className="mt-4 w-full bg-blue-600 text-white py-5 rounded-2xl font-black uppercase tracking-widest hover:bg-blue-500 shadow-xl shadow-blue-600/20">
-                Establish Protocol
-              </button>
-            </div>
-          </div>
-        )}
-
-        {step === 4 && (
-          <div className="space-y-8 animate-in slide-in-from-right-4">
-            <div className="text-center">
-              <h2 className="text-4xl font-black text-white tracking-tight mb-2">Final Sync</h2>
-              <p className="text-slate-400 font-bold">What is your most frequent outdoor activity?</p>
-            </div>
-            <div className="space-y-4">
-              <input 
-                autoFocus
-                type="text"
-                placeholder="e.g., Morning Cycling, Walking to Subway..."
-                className="w-full bg-slate-800/50 border-2 border-slate-700 rounded-2xl px-8 py-5 text-lg font-bold text-white focus:border-blue-500 outline-none transition-all placeholder:text-slate-600"
-                value={profile.mainActivity}
-                onChange={e => setProfile({...profile, mainActivity: e.target.value})}
-                onKeyDown={e => e.key === 'Enter' && profile.mainActivity && finish()}
-              />
-              <button 
-                disabled={!profile.mainActivity}
+              <button
                 onClick={finish}
-                className="w-full bg-gradient-to-r from-blue-600 to-blue-400 text-white py-6 rounded-2xl font-black uppercase tracking-[0.3em] shadow-2xl transition-all active:scale-95"
+                className="mt-4 w-full bg-gradient-to-r from-blue-600 to-blue-400 text-white py-5 rounded-2xl font-black uppercase tracking-widest hover:from-blue-500 hover:to-blue-300 shadow-xl shadow-blue-600/20 transition-all active:scale-95"
               >
-                Complete Synchronization
+                Start PureAir
               </button>
-              <p className="text-[10px] text-center text-slate-600 font-black uppercase tracking-widest">AURA Environmental OS v2.5 Ready</p>
+              <p className="text-[10px] text-center text-slate-600 font-black uppercase tracking-widest">Recalibrate anytime in Settings</p>
             </div>
           </div>
         )}

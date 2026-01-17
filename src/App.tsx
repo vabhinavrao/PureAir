@@ -134,10 +134,15 @@ function App() {
   }, [profile, user]);
 
   const handleProfileComplete = async (newProfile: UserProfile) => {
-    if (user) {
-      await saveUserProfile(user.uid, newProfile);
-    }
+    // Optimistic update - set profile immediately so app continues to work
     setProfile(newProfile);
+
+    // Try to save to Firestore in background (non-blocking)
+    if (user) {
+      saveUserProfile(user.uid, newProfile).catch(error => {
+        console.warn('Failed to save profile to cloud (will retry on next sync):', error);
+      });
+    }
   };
 
   const toggleNotifications = async () => {
@@ -288,26 +293,15 @@ function App() {
     }
   };
 
-  // Show loading screen while checking auth
-  if (authLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center space-y-4">
-          <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
-          <p className="text-slate-500 font-medium">Initializing PureAir...</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Show login screen if not authenticated
-  if (!user) {
+  // Show login screen while checking auth or if not authenticated
+  // This eliminates the loading spinner delay - Firebase will auto-transition if already logged in
+  if (authLoading || !user) {
     return <LoginScreen onLoginSuccess={() => { }} />;
   }
 
-  // Show onboarding if no profile
+  // Show onboarding if no profile - pass Gmail name to skip asking for it
   if (!profile) {
-    return <Onboarding onComplete={handleProfileComplete} />;
+    return <Onboarding onComplete={handleProfileComplete} userName={user.displayName || undefined} />;
   }
 
   return (

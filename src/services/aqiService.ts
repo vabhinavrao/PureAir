@@ -22,9 +22,9 @@ const WAQI_API_URL = 'https://api.waqi.info';
 const OPENAQ_API_URL = 'https://api.openaq.org/v3';
 const REQUEST_TIMEOUT_MS = 10000;
 
-// Get API tokens from environment (defined in vite.config.ts)
-const getWaqiToken = () => process.env.WAQI_API_TOKEN || '';
-const getOpenAQKey = () => process.env.OPENAQ_API_KEY || '';
+// Get API tokens from environment (VITE_ prefixed)
+const getWaqiToken = () => import.meta.env.VITE_WAQI_API_TOKEN || '';
+const getOpenAQKey = () => import.meta.env.VITE_OPENAQ_API_KEY || '';
 
 // ========== Cache Utilities ==========
 

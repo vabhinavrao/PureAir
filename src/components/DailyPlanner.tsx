@@ -21,18 +21,27 @@ const DailyPlanner: React.FC<Props> = ({ onPlanSet }) => {
   const [diagnostic, setDiagnostic] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Get API key from Vite environment variables
+  const apiKey = import.meta.env.VITE_GOOGLE_AI_API_KEY || import.meta.env.VITE_API_KEY;
+
+  // Only create AI client if API key is available
+  const ai = apiKey ? new GoogleGenAI({ apiKey }) : null;
 
   const fetchQuickDiagnostic = async (protocolQuery: string) => {
     setIsLoading(true);
     setDiagnostic(null);
     try {
+      if (!ai) {
+        setDiagnostic("AI not configured. Operating in safe mode.");
+        return;
+      }
       const response = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
+        model: 'gemini-2.0-flash',
         contents: `Context: You are AURA. Short safety diagnostic (max 15 words) for: ${protocolQuery}.`,
       });
       setDiagnostic(response.text || "Diagnostic failed.");
     } catch (e) {
+      console.warn('AI diagnostic failed:', e);
       setDiagnostic("System busy. Proceed with caution.");
     } finally {
       setIsLoading(false);
@@ -42,10 +51,10 @@ const DailyPlanner: React.FC<Props> = ({ onPlanSet }) => {
   const selectProtocol = (p: typeof PROTOCOLS[0]) => {
     setActivity(p.label);
     setDuration(p.duration);
-    onPlanSet({ 
-      activity: p.label, 
-      durationMinutes: p.duration, 
-      startTime: new Date().toLocaleTimeString() 
+    onPlanSet({
+      activity: p.label,
+      durationMinutes: p.duration,
+      startTime: new Date().toLocaleTimeString()
     });
     fetchQuickDiagnostic(p.query);
   };
@@ -53,10 +62,10 @@ const DailyPlanner: React.FC<Props> = ({ onPlanSet }) => {
   const handleManualSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const act = activity || 'Custom Protocol';
-    onPlanSet({ 
-      activity: act, 
-      durationMinutes: duration, 
-      startTime: new Date().toLocaleTimeString() 
+    onPlanSet({
+      activity: act,
+      durationMinutes: duration,
+      startTime: new Date().toLocaleTimeString()
     });
     fetchQuickDiagnostic(`Safety of ${act} for ${duration} minutes.`);
   };
@@ -68,7 +77,7 @@ const DailyPlanner: React.FC<Props> = ({ onPlanSet }) => {
           <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em]">Plan of the Day</h4>
           <span className="text-[9px] font-black text-blue-500 bg-blue-50 px-2 py-0.5 rounded">AURA Optimized</span>
         </div>
-        
+
         <div className="grid grid-cols-2 gap-3">
           {PROTOCOLS.map(p => (
             <button
@@ -115,8 +124,8 @@ const DailyPlanner: React.FC<Props> = ({ onPlanSet }) => {
       <form onSubmit={handleManualSubmit} className="space-y-6 flex-1 flex flex-col justify-end">
         <div>
           <label className="block text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1">Activity Identity</label>
-          <input 
-            type="text" 
+          <input
+            type="text"
             placeholder="e.g., Evening Stroll..."
             className="w-full bg-slate-50 border-2 border-slate-100 rounded-2xl px-5 py-4 font-bold text-slate-800 focus:border-blue-500 outline-none transition-all shadow-inner"
             value={activity}
