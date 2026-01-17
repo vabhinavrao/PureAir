@@ -53,13 +53,17 @@ const GeminiAssistant: React.FC<Props> = ({ aqiData, profile, history, plan, onC
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [isCalibrating, setIsCalibrating] = useState(false);
-  
+
   const scrollRef = useRef<HTMLDivElement>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const recognitionRef = useRef<any>(null);
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+  if (!apiKey) {
+    console.error("AURA Error: Gemini API key not configured. Set VITE_GEMINI_API_KEY in .env.local");
+  }
+  const ai = new GoogleGenAI({ apiKey: apiKey || '' });
 
   const getAudioContext = () => {
     if (!audioContextRef.current) {
@@ -67,8 +71,8 @@ const GeminiAssistant: React.FC<Props> = ({ aqiData, profile, history, plan, onC
       if (GlobalCtx && GlobalCtx.sampleRate === 24000) {
         audioContextRef.current = GlobalCtx;
       } else {
-        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({ 
-          sampleRate: 24000 
+        audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({
+          sampleRate: 24000
         });
         (window as any).AURA_AUDIO_CONTEXT = audioContextRef.current;
       }
@@ -86,7 +90,7 @@ const GeminiAssistant: React.FC<Props> = ({ aqiData, profile, history, plan, onC
       try {
         currentSourceRef.current.stop();
         currentSourceRef.current.disconnect();
-      } catch (e) {}
+      } catch (e) { }
       currentSourceRef.current = null;
     }
     updateSpeakingState(false);
@@ -111,23 +115,23 @@ const GeminiAssistant: React.FC<Props> = ({ aqiData, profile, history, plan, onC
       });
 
       const base64Audio = response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      
+
       if (base64Audio) {
         const ctx = getAudioContext();
         if (ctx.state === 'suspended') await ctx.resume();
-        
+
         const audioBuffer = await decodeAudioData(decodeBase64(base64Audio), ctx, 24000, 1);
         const source = ctx.createBufferSource();
         source.buffer = audioBuffer;
         source.connect(ctx.destination);
-        
+
         source.onended = () => {
           if (currentSourceRef.current === source) {
             updateSpeakingState(false);
             currentSourceRef.current = null;
           }
         };
-        
+
         currentSourceRef.current = source;
         source.start(0);
       } else {
@@ -153,8 +157,8 @@ const GeminiAssistant: React.FC<Props> = ({ aqiData, profile, history, plan, onC
         const transcript = event.results[0][0].transcript;
         setInputValue(transcript);
         setTimeout(() => {
-           const syntheticEvent = { preventDefault: () => {} } as React.FormEvent;
-           handleSendMessage(syntheticEvent, transcript);
+          const syntheticEvent = { preventDefault: () => { } } as React.FormEvent;
+          handleSendMessage(syntheticEvent, transcript);
         }, 500);
       };
       recognitionRef.current = recognition;
@@ -205,7 +209,7 @@ const GeminiAssistant: React.FC<Props> = ({ aqiData, profile, history, plan, onC
     setLoading(true);
 
     const historyPrompt = messages.slice(-3).map(m => `${m.role === 'ai' ? 'AURA' : 'User'}: ${m.text}`).join('\n');
-    
+
     try {
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
@@ -229,14 +233,14 @@ const GeminiAssistant: React.FC<Props> = ({ aqiData, profile, history, plan, onC
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-2xl">
       <div className="max-w-2xl w-full h-[700px] glass-card rounded-[40px] flex flex-col overflow-hidden shadow-2xl border-2 border-white/40 animate-in zoom-in-95 duration-500">
-        
+
         <div className="p-8 bg-slate-900 text-white flex justify-between items-center border-b border-white/5">
           <div className="flex items-center gap-4">
             <div className={`w-12 h-12 rounded-2xl bg-blue-600 flex items-center justify-center shadow-lg relative overflow-hidden transition-all duration-500 ${isCalibrating ? 'scale-110 shadow-blue-500/50' : ''}`}>
-               {isSpeaking && <div className="absolute inset-0 bg-blue-400/40 animate-pulse" />}
-               <svg className={`w-7 h-7 relative z-10 ${isSpeaking ? 'scale-110' : ''} ${isCalibrating ? 'animate-bounce' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
-               </svg>
+              {isSpeaking && <div className="absolute inset-0 bg-blue-400/40 animate-pulse" />}
+              <svg className={`w-7 h-7 relative z-10 ${isSpeaking ? 'scale-110' : ''} ${isCalibrating ? 'animate-bounce' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
             </div>
             <div>
               <h3 className="text-xl font-black tracking-tight uppercase leading-none text-blue-400">AURA CORE</h3>
@@ -252,19 +256,18 @@ const GeminiAssistant: React.FC<Props> = ({ aqiData, profile, history, plan, onC
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </div>
-        
+
         <div ref={scrollRef} className="flex-1 overflow-y-auto p-8 space-y-8 bg-white/70 scrollbar-hide">
           {messages.map((m, i) => (
             <div key={i} className={`flex flex-col ${m.role === 'ai' ? 'items-start' : 'items-end'}`}>
-              <div className={`max-w-[85%] p-6 rounded-[2.5rem] font-bold text-[13px] leading-relaxed shadow-sm transition-all animate-in slide-in-from-bottom-2 ${
-                m.role === 'ai' ? 'bg-white text-slate-800 rounded-tl-none border border-blue-100' : 'bg-slate-900 text-white rounded-tr-none'
-              }`}>
+              <div className={`max-w-[85%] p-6 rounded-[2.5rem] font-bold text-[13px] leading-relaxed shadow-sm transition-all animate-in slide-in-from-bottom-2 ${m.role === 'ai' ? 'bg-white text-slate-800 rounded-tl-none border border-blue-100' : 'bg-slate-900 text-white rounded-tr-none'
+                }`}>
                 {m.text}
                 {m.role === 'ai' && (
                   <div className="mt-4 border-t border-slate-50 pt-3">
-                    <FeedbackControl 
-                      compact 
-                      context={m.text} 
+                    <FeedbackControl
+                      compact
+                      context={m.text}
                       onFeedbackSent={handleFeedbackSent}
                     />
                   </div>
@@ -286,11 +289,11 @@ const GeminiAssistant: React.FC<Props> = ({ aqiData, profile, history, plan, onC
               className={`p-5 rounded-[2rem] transition-all flex items-center justify-center ${isListening ? 'bg-red-500 text-white animate-pulse shadow-[0_0_15px_#ef4444]' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
               title="Engage Voice Mode"
             >
-               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-               </svg>
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+              </svg>
             </button>
-            <input 
+            <input
               type="text"
               placeholder={isListening ? "Listening..." : "Command AURA via text or voice..."}
               value={inputValue}
@@ -298,7 +301,7 @@ const GeminiAssistant: React.FC<Props> = ({ aqiData, profile, history, plan, onC
               disabled={loading}
               className="flex-1 px-8 py-5 bg-slate-50 border-2 border-slate-100 rounded-[2rem] font-bold text-sm text-slate-800 focus:border-blue-500 outline-none transition-all"
             />
-            <button 
+            <button
               type="submit"
               disabled={loading || !inputValue.trim()}
               className="px-8 py-5 bg-blue-600 text-white rounded-[2rem] font-black text-xs uppercase tracking-widest shadow-xl hover:bg-blue-500 transition-all disabled:opacity-50"
@@ -306,11 +309,11 @@ const GeminiAssistant: React.FC<Props> = ({ aqiData, profile, history, plan, onC
               Send
             </button>
           </form>
-          
+
           <div className="flex flex-wrap gap-2 mt-6">
-             {["Is it safe for a run?", "Explain PM2.5", "Routine update"].map(cmd => (
-               <button key={cmd} onClick={() => setInputValue(cmd)} className="px-4 py-2 bg-slate-50 hover:bg-blue-50 border border-slate-100 hover:border-blue-200 rounded-xl text-[9px] font-black text-slate-500 hover:text-blue-600 uppercase tracking-widest transition-all">{cmd}</button>
-             ))}
+            {["Is it safe for a run?", "Explain PM2.5", "Routine update"].map(cmd => (
+              <button key={cmd} onClick={() => setInputValue(cmd)} className="px-4 py-2 bg-slate-50 hover:bg-blue-50 border border-slate-100 hover:border-blue-200 rounded-xl text-[9px] font-black text-slate-500 hover:text-blue-600 uppercase tracking-widest transition-all">{cmd}</button>
+            ))}
           </div>
         </div>
       </div>
