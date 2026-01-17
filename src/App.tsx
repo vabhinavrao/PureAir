@@ -52,22 +52,42 @@ function App() {
   const watchId = useRef<number | null>(null);
   const lastAlertTime = useRef<number>(0);
 
-  // Listen to auth state changes
+  // Listen to auth state changes with timeout to prevent long waits
   useEffect(() => {
+    let resolved = false;
+
+    // Timeout after 3 seconds - don't make users wait forever
+    const timeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        setAuthLoading(false);
+      }
+    }, 3000);
+
     const unsubscribe = onAuthChange(async (firebaseUser) => {
+      if (resolved) {
+        // Already timed out, but update state anyway for next render
+        setUser(firebaseUser);
+        if (firebaseUser) {
+          getUserProfile(firebaseUser.uid).then(setProfile).catch(console.error);
+          getHistory(firebaseUser.uid).then(setHistory).catch(console.error);
+        }
+        return;
+      }
+
+      resolved = true;
+      clearTimeout(timeout);
       setUser(firebaseUser);
 
       if (firebaseUser) {
-        try {
-          const savedProfile = await getUserProfile(firebaseUser.uid);
+        // Load profile and history in parallel, don't block on it
+        Promise.all([
+          getUserProfile(firebaseUser.uid).catch(() => null),
+          getHistory(firebaseUser.uid).catch(() => [])
+        ]).then(([savedProfile, savedHistory]) => {
           setProfile(savedProfile);
-
-          // Load history from Firestore
-          const savedHistory = await getHistory(firebaseUser.uid);
-          setHistory(savedHistory);
-        } catch (error) {
-          console.error('Error loading user data:', error);
-        }
+          setHistory(savedHistory || []);
+        });
       } else {
         setProfile(null);
         setHistory([]);
@@ -76,7 +96,10 @@ function App() {
       setAuthLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => {
+      clearTimeout(timeout);
+      unsubscribe();
+    };
   }, []);
 
   // Computed PES for today based on active plan

@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app";
-import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import { getAuth, GoogleAuthProvider, browserLocalPersistence, setPersistence } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 // Firebase configuration sourced from environment variables
@@ -18,6 +18,10 @@ const app = initializeApp(firebaseConfig);
 
 // Initialize services
 export const auth = getAuth(app);
+
+// Enable local persistence for faster returning user detection
+setPersistence(auth, browserLocalPersistence).catch(console.error);
+
 export const googleProvider = new GoogleAuthProvider();
 export const db = getFirestore(app);
 
