@@ -1,7 +1,9 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { User } from 'firebase/auth';
 import { fetchAQIData, searchCity, fetchForecastData, HourlyForecast } from './services/aqiService';
 import { getAIInsights, getTrendInsights, predictFutureAQI, getDailyDebrief } from './services/geminiService';
+import { onAuthChange, signOut, getUserProfile, saveUserProfile, saveHistoryEntry, getHistory } from './services/authService';
 import { AQIResponse, ExposureInsight, HealthAdvice, UserProfile, DailyPlan, HistoricalEntry, TrendInsights } from './types';
 import Header from './components/Header';
 import AQIHero from './components/AQIHero';
@@ -17,13 +19,15 @@ import FeedbackControl from './components/FeedbackControl';
 import ForecastStrip from './components/ForecastStrip';
 import DailySummary from './components/DailySummary';
 import ExposureAssessment from './components/ExposureAssessment';
+import LoginScreen from './components/LoginScreen';
 
 function App() {
-  const [profile, setProfile] = useState<UserProfile | null>(() => {
-    const saved = localStorage.getItem('pureair_profile');
-    return saved ? JSON.parse(saved) : null;
-  });
-  
+  // Auth state
+  const [user, setUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+
   const [aqiData, setAqiData] = useState<AQIResponse | null>(null);
   const [forecast, setForecast] = useState<HourlyForecast[]>([]);
   const [insights, setInsights] = useState<{ insight: ExposureInsight; healthAdvice: HealthAdvice } | null>(null);
@@ -33,23 +37,47 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [isLiveTracking, setIsLiveTracking] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  
-  const [history, setHistory] = useState<HistoricalEntry[]>(() => {
-    const saved = localStorage.getItem('pureair_history');
-    return saved ? JSON.parse(saved) : [];
-  });
+
+  const [history, setHistory] = useState<HistoricalEntry[]>([]);
   const [trendInsights, setTrendInsights] = useState<TrendInsights | null>(null);
   const [trendLoading, setTrendLoading] = useState(false);
 
   const [plan, setPlan] = useState<DailyPlan | null>(null);
   const [showAssistant, setShowAssistant] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  
+
   const [dailyTakeaway, setDailyTakeaway] = useState<string>('');
   const [dailyLoading, setDailyLoading] = useState(false);
 
   const watchId = useRef<number | null>(null);
   const lastAlertTime = useRef<number>(0);
+
+  // Listen to auth state changes
+  useEffect(() => {
+    const unsubscribe = onAuthChange(async (firebaseUser) => {
+      setUser(firebaseUser);
+
+      if (firebaseUser) {
+        try {
+          const savedProfile = await getUserProfile(firebaseUser.uid);
+          setProfile(savedProfile);
+
+          // Load history from Firestore
+          const savedHistory = await getHistory(firebaseUser.uid);
+          setHistory(savedHistory);
+        } catch (error) {
+          console.error('Error loading user data:', error);
+        }
+      } else {
+        setProfile(null);
+        setHistory([]);
+      }
+
+      setAuthLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   // Computed PES for today based on active plan
   const currentPES = useMemo(() => {
@@ -57,8 +85,8 @@ function App() {
     const activityMap = { indoor: 0.2, commuter: 1.0, athlete: 2.5 };
     const healthMap = { none: 1.0, allergy: 1.5, asthma: 2.5 };
     return Math.floor(
-      (aqiData.aqi * plan.durationMinutes / 60) * 
-      activityMap[profile.activityLevel] * 
+      (aqiData.aqi * plan.durationMinutes / 60) *
+      activityMap[profile.activityLevel] *
       healthMap[profile.sensitivity]
     );
   }, [aqiData?.aqi, plan, profile]);
@@ -78,7 +106,7 @@ function App() {
     if (aqiData && profile?.notificationsEnabled) {
       const threshold = profile.alertThreshold || 100;
       const now = Date.now();
-      
+
       if (aqiData.aqi >= threshold && (now - lastAlertTime.current > 600000)) {
         if (Notification.permission === 'granted') {
           new Notification("PureAir Pro Alert", {
@@ -91,9 +119,10 @@ function App() {
     }
   }, [aqiData, profile]);
 
+  // Save profile to Firestore when it changes
   useEffect(() => {
-    if (profile) {
-      localStorage.setItem('pureair_profile', JSON.stringify(profile));
+    if (profile && user) {
+      saveUserProfile(user.uid, profile).catch(console.error);
       if (!plan) {
         setPlan({
           activity: profile.mainActivity || 'Outdoor Protocol',
@@ -102,11 +131,18 @@ function App() {
         });
       }
     }
-  }, [profile]);
+  }, [profile, user]);
+
+  const handleProfileComplete = async (newProfile: UserProfile) => {
+    if (user) {
+      await saveUserProfile(user.uid, newProfile);
+    }
+    setProfile(newProfile);
+  };
 
   const toggleNotifications = async () => {
     if (!profile) return;
-    
+
     if (!profile.notificationsEnabled && Notification.permission !== 'granted') {
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
@@ -166,7 +202,7 @@ function App() {
     } finally {
       setLoading(false);
     }
-  }, [profile, currentPES]);
+  }, [profile, currentPES, user]);
 
   const startLiveTracking = useCallback(() => {
     if (!navigator.geolocation) return;
@@ -190,7 +226,7 @@ function App() {
     else setLoading(false);
   };
 
-  const updateHistory = useCallback((data: AQIResponse) => {
+  const updateHistory = useCallback(async (data: AQIResponse) => {
     const today = new Date().toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
     const newEntry: HistoricalEntry = {
       date: today,
@@ -198,7 +234,16 @@ function App() {
       city: data.location.city,
       pes: currentPES
     };
-    
+
+    // Save to Firestore if user is logged in
+    if (user) {
+      try {
+        await saveHistoryEntry(user.uid, newEntry);
+      } catch (error) {
+        console.error('Error saving history:', error);
+      }
+    }
+
     setHistory(prev => {
       const existingIdx = prev.findIndex(h => h.date === today && h.city === data.location.city);
       let updated;
@@ -208,10 +253,9 @@ function App() {
       } else {
         updated = [...prev, newEntry].slice(-90);
       }
-      localStorage.setItem('pureair_history', JSON.stringify(updated));
       return updated;
     });
-  }, [currentPES]);
+  }, [currentPES, user]);
 
   const loadTrendData = useCallback(async () => {
     if (history.length < 2 || !profile) return;
@@ -233,15 +277,44 @@ function App() {
     }
   }, [history.length, loadTrendData]);
 
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      setProfile(null);
+      setHistory([]);
+      setAqiData(null);
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
+  };
+
+  // Show loading screen while checking auth
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center space-y-4">
+          <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <p className="text-slate-500 font-medium">Initializing PureAir...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show login screen if not authenticated
+  if (!user) {
+    return <LoginScreen onLoginSuccess={() => { }} />;
+  }
+
+  // Show onboarding if no profile
   if (!profile) {
-    return <Onboarding onComplete={setProfile} />;
+    return <Onboarding onComplete={handleProfileComplete} />;
   }
 
   return (
     <div className="min-h-screen pb-40 transition-all duration-1000 scrollbar-hide">
-      <Header 
-        onLocate={startLiveTracking} 
-        onSearch={handleSearch} 
+      <Header
+        onLocate={startLiveTracking}
+        onSearch={handleSearch}
         onToggleSidebar={() => setIsSidebarOpen(true)}
         isLoading={loading}
         isLive={isLiveTracking}
@@ -250,15 +323,11 @@ function App() {
         userName={profile.name}
       />
 
-      <Sidebar 
-        isOpen={isSidebarOpen} 
-        onClose={() => setIsSidebarOpen(false)} 
+      <Sidebar
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
         profile={profile}
-        onUpdateProfile={() => {
-          setIsSidebarOpen(false);
-          setProfile(null);
-          localStorage.removeItem('pureair_profile');
-        }}
+        onUpdateProfile={handleSignOut}
         onUpdateThreshold={updateThreshold}
       />
 
@@ -281,14 +350,14 @@ function App() {
                 </div>
               )}
             </section>
-            
+
             {aqiData && (
               <>
                 <section>
-                  <DailySummary 
-                    avgAqi={aqiData.aqi} 
-                    pes={currentPES} 
-                    takeaway={dailyTakeaway} 
+                  <DailySummary
+                    avgAqi={aqiData.aqi}
+                    pes={currentPES}
+                    takeaway={dailyTakeaway}
                     isLoading={dailyLoading}
                     profile={profile}
                   />
@@ -302,16 +371,16 @@ function App() {
               </>
             )}
           </div>
-          
+
           <div className="lg:col-span-4 flex flex-col items-center">
             <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.3em] mb-6 w-full text-center lg:text-left px-4">Interface Core</h3>
-            <AICharacter 
-              aqi={aqiData?.aqi || 0} 
-              message={aqiData ? `Telemetry synchronized, ${profile.name}. Atmospheric analysis protocols are now active. ${prediction ? 'Scientific forecast suggests a ' + prediction.reasoning.split('.')[0] : ''}` : `AURA OS initializing. Waiting for coordinate authorization.`} 
+            <AICharacter
+              aqi={aqiData?.aqi || 0}
+              message={aqiData ? `Telemetry synchronized, ${profile.name}. Atmospheric analysis protocols are now active. ${prediction ? 'Scientific forecast suggests a ' + prediction.reasoning.split('.')[0] : ''}` : `AURA OS initializing. Waiting for coordinate authorization.`}
               isSpeaking={isSpeaking}
               name="AURA"
             />
-            
+
             {aqiData && (
               <div className="w-full mt-10 space-y-12">
                 {plan && (
@@ -322,34 +391,34 @@ function App() {
 
                 <section>
                   <div className="glass-card p-10 rounded-[50px] space-y-8 border-l-[12px] border-blue-600 shadow-2xl relative overflow-hidden">
-                      {aiLoading && (
-                        <div className="absolute inset-0 bg-white/50 backdrop-blur-sm z-10 flex items-center justify-center">
-                           <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
-                        </div>
-                      )}
-                      <div className="flex items-center gap-4">
-                        <div className="w-3 h-3 bg-blue-600 rounded-full animate-pulse" />
-                        <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">AI Predictive Summary</span>
+                    {aiLoading && (
+                      <div className="absolute inset-0 bg-white/50 backdrop-blur-sm z-10 flex items-center justify-center">
+                        <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
                       </div>
-                      {prediction && (
-                        <div className="space-y-4">
-                          <p className="text-lg text-slate-800 leading-relaxed font-bold italic">
-                            "{prediction.reasoning}"
-                          </p>
-                          <div className="grid grid-cols-3 gap-2">
-                            {prediction.predictions.map((p: any, i: number) => (
-                              <div key={i} className="bg-slate-50 p-3 rounded-2xl border border-slate-100 text-center">
-                                <div className="text-[8px] font-black text-slate-400 uppercase mb-1">+{p.hoursAhead}h</div>
-                                <div className="text-sm font-black text-slate-900">{p.predictedAqi}</div>
-                                <div className="text-[7px] font-black text-blue-600 uppercase">{p.riskLevel}</div>
-                              </div>
-                            ))}
-                          </div>
+                    )}
+                    <div className="flex items-center gap-4">
+                      <div className="w-3 h-3 bg-blue-600 rounded-full animate-pulse" />
+                      <span className="text-[11px] font-black uppercase tracking-widest text-slate-400">AI Predictive Summary</span>
+                    </div>
+                    {prediction && (
+                      <div className="space-y-4">
+                        <p className="text-lg text-slate-800 leading-relaxed font-bold italic">
+                          "{prediction.reasoning}"
+                        </p>
+                        <div className="grid grid-cols-3 gap-2">
+                          {prediction.predictions.map((p: any, i: number) => (
+                            <div key={i} className="bg-slate-50 p-3 rounded-2xl border border-slate-100 text-center">
+                              <div className="text-[8px] font-black text-slate-400 uppercase mb-1">+{p.hoursAhead}h</div>
+                              <div className="text-sm font-black text-slate-900">{p.predictedAqi}</div>
+                              <div className="text-[7px] font-black text-blue-600 uppercase">{p.riskLevel}</div>
+                            </div>
+                          ))}
                         </div>
-                      )}
-                      <div className="pt-6 border-t border-slate-100">
-                        <FeedbackControl />
                       </div>
+                    )}
+                    <div className="pt-6 border-t border-slate-100">
+                      <FeedbackControl />
+                    </div>
                   </div>
                 </section>
               </div>
@@ -360,7 +429,7 @@ function App() {
         {aqiData && (
           <div className="space-y-16">
             <section>
-               <TravelRoutes currentAqi={aqiData.aqi} location={aqiData.location} />
+              <TravelRoutes currentAqi={aqiData.aqi} location={aqiData.location} />
             </section>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
@@ -377,23 +446,23 @@ function App() {
         )}
 
         {showAssistant && aqiData && (
-          <GeminiAssistant 
-            aqiData={aqiData} 
-            profile={profile} 
+          <GeminiAssistant
+            aqiData={aqiData}
+            profile={profile}
             history={history}
             plan={plan}
-            onClose={() => setShowAssistant(false)} 
+            onClose={() => setShowAssistant(false)}
             onSpeakingChange={setIsSpeaking}
           />
         )}
       </main>
 
       <div className="fixed bottom-10 left-1/2 -translate-x-1/2 flex items-center gap-6 bg-slate-900/95 backdrop-blur-3xl text-white px-10 py-6 rounded-[3rem] shadow-2xl z-50 border border-white/10">
-        <button onClick={() => window.scrollTo({top:0, behavior:'smooth'})} className="p-3 hover:bg-white/10 rounded-2xl transition-all">
+        <button onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })} className="p-3 hover:bg-white/10 rounded-2xl transition-all">
           <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 10l7-7m0 0l7 7m-7-7v18" /></svg>
         </button>
         <div className="w-px h-10 bg-white/10" />
-        <button 
+        <button
           onClick={() => setShowAssistant(true)}
           className="flex items-center gap-4 font-black text-xs uppercase tracking-[0.3em] bg-blue-600 px-8 py-4 rounded-2xl hover:bg-blue-500 transition-all shadow-xl shadow-blue-600/30"
         >

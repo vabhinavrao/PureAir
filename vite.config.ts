@@ -12,7 +12,9 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     define: {
       'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
-      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
+      'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY),
+      'process.env.WAQI_API_TOKEN': JSON.stringify(env.WAQI_API_TOKEN),
+      'process.env.OPENAQ_API_KEY': JSON.stringify(env.OPENAQ_API_KEY)
     },
     resolve: {
       alias: {
@@ -28,6 +30,7 @@ export default defineConfig(({ mode }) => {
           manualChunks: {
             'react-vendor': ['react', 'react-dom'],
             'map-vendor': ['leaflet', 'react-leaflet'],
+            'firebase-vendor': ['firebase/app', 'firebase/auth', 'firebase/firestore'],
           }
         }
       }
